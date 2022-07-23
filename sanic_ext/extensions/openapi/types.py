@@ -275,8 +275,27 @@ class Object(Schema):
 
     @classmethod
     def make(cls, value: Any, **kwargs):
+        if hasattr(value, "__fields__"):
+            properties = {}
+            for k, v in _properties(value).items():
+                fields = getattr(value, "__fields__", None)
+                field_info = {}
+                if fields:
+                    field_info = _get_field_info(fields[k].field_info)
+                    if field_info.get("disable_doc"):
+                        continue
+
+                properties[k] = Schema.make(
+                    v,
+                    **field_info
+                )
+        else:
+            properties = {
+                k: Schema.make(v) for k, v in _properties(value).items()
+            }
+
         return cls(
-            {k: Schema.make(v) for k, v in _properties(value).items()},
+            properties,
             **kwargs,
         )
 
@@ -323,6 +342,21 @@ def _properties(value: object) -> Dict:
         for k, v in {**get_type_hints(cls), **fields}.items()
         if not k.startswith("_")
     }
+
+
+def _get_field_info(field_info):
+    field_data = {}
+    for field_key in ["description", "extra"]:
+        value = getattr(field_info, field_key, None)
+        if value:
+            if isinstance(value, dict):
+                field_data.update(value)
+            else:
+                field_data[field_key] = value
+
+    if "default_value" in field_data:
+        field_data["default"] = field_data.pop("default_value")
+    return field_data
 
 
 def _extract(item):
